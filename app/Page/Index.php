@@ -10,8 +10,11 @@ use Atk4\Ui\Layout;
 use Atk4\Ui\Table\Column\Link;
 use Atk4\Ui\Image;
 use Atk4\Ui\Js\JsBlock;
+use Atk4\Ui\Js\JsExpression;
+use Atk4\Ui\Text;
 use Atk4\Ui\VirtualPage;
 use IamAdty\PixelColor\App\Page;
+use IamAdty\PixelColor\Component\Header;
 use IamAdty\PixelColor\Component\Table;
 use Intervention\Image\Drivers\Gd\Driver;
 use Intervention\Image\ImageManager;
@@ -25,9 +28,13 @@ class Index extends Page
 
     protected function build()
     {
+        $this->getApp()->requireJs('/assets/vendor/imgAreaSelect/js/jquery.imgareaselect.dev.js');
+        $this->getApp()->requireJs('/assets/vendor/imgAreaSelect/js/onSelectFunction.js');
+        $this->getApp()->requireCss('/assets/vendor/imgAreaSelect/css/imgareaselect-default.css');
+
         $colLayout = Columns::addTo($this);
 
-        $data = array_map(function($image) {
+        $data = array_map(function ($image) {
             return [
                 'image' => $image
             ];
@@ -70,6 +77,10 @@ class Index extends Page
 
         if (!is_null($image)) {
             $this->stickyGet('image');
+            $this->stickyGet('x1');
+            $this->stickyGet('y1');
+            $this->stickyGet('x2');
+            $this->stickyGet('y2');
 
             $manager = new ImageManager(new Driver());
 
@@ -96,80 +107,160 @@ class Index extends Page
             $imageData = file_get_contents(__DIR__ . '/../../data/images/' . $image);
             $imageType = pathinfo(__DIR__ . '/../../data/images/' . $image, PATHINFO_EXTENSION);
 
-            Image::addTo($colKanan->addRow(), [
+            $showImage = Image::addTo($colKanan->addRow(), [
                 'data:image/' . $imageType . ';base64,' . base64_encode($imageData)
             ]);
 
-            $formGetPixel = Form::addTo($colKanan->addRow());
-            $pixelY = $formGetPixel->addControl('pixel_y', [
-                'caption' => 'pixel Y',
-            ]);
-            
-            $pixelX = $formGetPixel->addControl('pixel_x', [
-                'caption' => 'pixel X'
-            ]);
+            /** @var \Atk4\Ui\Js\Jquery */
+            $showImageJQuery = $showImage->js();
 
-            $rgbColorControl = $formGetPixel->addControl('rgb');
-            $hexColorControl = $formGetPixel->addControl('hex');
+            $this->js(true, new JsExpression('var ias = []', [
+                $showImage->js(true)->imgAreaSelect([
+                    'instance' => true,
+                    'handles' => true,
+                    'onSelectEnd' => new JsExpression('function (img, selection) {
+                        window.location.href = "' . $this->getApp()->jsUrl('/', [
+                        'image' => $this->getApp()->tryGetRequestQueryParam('image'),
+                    ]) . '&x1=" + selection.x1 + "&y1=" + selection.y1 + "&x2=" + selection.x2 + "&y2=" + selection.y2
+                    }')
+                ])
+            ]));
 
-            $rgbColorArg = $this->getApp()->tryGetRequestQueryParam('rgb_color');
-            $hexColorArg = $this->getApp()->tryGetRequestQueryParam('hex_color');
+            if (!is_null($this->getApp()->tryGetRequestQueryParam('x1')) && !is_null($this->getApp()->tryGetRequestQueryParam('y1')) && !is_null($this->getApp()->tryGetRequestQueryParam('x2')) && !is_null($this->getApp()->tryGetRequestQueryParam('y2'))) {
+                $this->js(true, new JsExpression('ias.setSelection([],[],[],[])', [
+                    $this->getApp()->getRequestQueryParam('x1'),
+                    $this->getApp()->getRequestQueryParam('y1'),
+                    $this->getApp()->getRequestQueryParam('x2'),
+                    $this->getApp()->getRequestQueryParam('y2'),
+                ]));
 
-            if (!is_null($rgbColorArg)) {
-                $rgbColorControl->set($rgbColorArg);
-            }
+                $this->js(true, new JsExpression('ias.setOptions({show: true})'));
+                $this->js(true, new JsExpression('ias.update()'));
 
-            if (!is_null($hexColorArg)) {
-                $hexColorControl->set($hexColorArg);
-            }
-
-            $formGetPixel->buttonSave->set('Get Pixel');
-
-            $formGetPixel->onSubmit(function (Form $form) use ($readImage) {
-                $pickColor = $readImage->pickColor(
-                    $this->getApp()->getRequestPostParam('pixel_x'),
-                    $this->getApp()->getRequestPostParam('pixel_y')
-                );
-
-                return new JsBlock([
-                    $form->jsReload([
-                        'hex_color' => $pickColor->toHex(),
-                        'rgb_color' => $pickColor->toString(),
-                        'pixel_x' => $this->getApp()->getRequestPostParam('pixel_x'),
-                        'pixel_y' => $this->getApp()->getRequestPostParam('pixel_y'),
-                    ])
+                Text::addTo($colKanan->addRow(), [
+                    'X1 = ' . $this->getApp()->getRequestQueryParam('x1') .
+                    ', Y1 = ' . $this->getApp()->getRequestQueryParam('y1') .
+                    ', X2 = ' . $this->getApp()->getRequestQueryParam('x2') .
+                    ', Y2 = ' . $this->getApp()->getRequestQueryParam('y2')
                 ]);
-            });
 
-            $hexPixelData = [];
-            $rgbPixelData = [];
-    
-            for ($h = 0; $h < $readImage->height(); $h++) {
-                    $hexColor = [];
-                    $rgbColor = [];
-                for ($w = 0; $w < $readImage->width(); $w++) {
-                    $hexColor[] = '[' . $h . 'x' . $w . '=' . $readImage->pickColor($w, $h)->toHex() . ']';
-                    $rgbColor[] = '[' . $h . 'x' . $w . '=' . $readImage->pickColor($w, $h)->toString() . ']';
-                }
-
-                $hexPixelData[] = [
-                    'color' => implode(', ', $hexColor)
-                ];
-
-                $rgbPixelData[] = [
-                    'color' => implode(', ', $rgbColor)
-                ];
+                Text::addTo($colKanan->addRow(), [
+                    'W = ' . $this->getApp()->getRequestQueryParam('x2') - $this->getApp()->getRequestQueryParam('x1') . ', H = ' . $this->getApp()->getRequestQueryParam('y2') - $this->getApp()->getRequestQueryParam('y1')
+                ]);
             }
+
+            // $formGetPixel = Form::addTo($colKanan->addRow());
+            // $pixelY = $formGetPixel->addControl('pixel_y', [
+            //     'caption' => 'pixel Y',
+            // ]);
+
+            // $getPixelY = $this->getApp()->tryGetRequestQueryParam('pixel_y');
+
+            // if (!is_null($getPixelY)) {
+            //     $pixelY->set($getPixelY);
+            // }
+
+            // $pixelX = $formGetPixel->addControl('pixel_x', [
+            //     'caption' => 'pixel X'
+            // ]);
+
+            // $getPixelX = $this->getApp()->tryGetRequestQueryParam('pixel_x');
+
+            // if (!is_null($getPixelX)) {
+            //     $pixelX->set($getPixelX);
+            // }
+
+            // $rgbColorControl = $formGetPixel->addControl('rgb');
+            // $hexColorControl = $formGetPixel->addControl('hex');
+
+            // $rgbColorArg = $this->getApp()->tryGetRequestQueryParam('rgb_color');
+            // $hexColorArg = $this->getApp()->tryGetRequestQueryParam('hex_color');
+
+            // if (!is_null($rgbColorArg)) {
+            //     $rgbColorControl->set($rgbColorArg);
+            // }
+
+            // if (!is_null($hexColorArg)) {
+            //     $hexColorControl->set($hexColorArg);
+            // }
+
+            // $formGetPixel->buttonSave->set('Get Pixel');
+
+            // $formGetPixel->onSubmit(function (Form $form) use ($readImage) {
+            //     $pickColor = $readImage->pickColor(
+            //         $this->getApp()->getRequestPostParam('pixel_x'),
+            //         $this->getApp()->getRequestPostParam('pixel_y')
+            //     );
+
+            //     return new JsBlock([
+            //         $form->jsReload([
+            //             'hex_color' => $pickColor->toHex(),
+            //             'rgb_color' => $pickColor->toString(),
+            //             'pixel_x' => $this->getApp()->getRequestPostParam('pixel_x'),
+            //             'pixel_y' => $this->getApp()->getRequestPostParam('pixel_y'),
+            //         ])
+            //     ]);
+            // });
 
             $accordion = Accordion::addTo($colKanan->addRow());
-            $accordion->addSection('Hex Color', function (VirtualPage $virtualPage) use ($hexPixelData) {
+            $accordion->addSection('Hex Color', function (VirtualPage $virtualPage) use ($readImage) {
+                if (!is_null($this->getApp()->tryGetRequestQueryParam('x1')) && !is_null($this->getApp()->tryGetRequestQueryParam('y1')) && !is_null($this->getApp()->tryGetRequestQueryParam('x2')) && !is_null($this->getApp()->tryGetRequestQueryParam('y2'))) {
+                    $startX = $this->getApp()->getRequestQueryParam('x1');
+                    $endX = $this->getApp()->getRequestQueryParam('x2') + 1;
+                    $startY = $this->getApp()->getRequestQueryParam('y1');
+                    $endY = $this->getApp()->getRequestQueryParam('y2') + 1;
+                } else {
+                    $startX = 0;
+                    $endX = $readImage->width();
+                    $startY = 0;
+                    $endY = $readImage->height();
+                }
+
+                $hexPixelData = [];
+
+                for ($h = $startY; $h < $endY; $h++) {
+                    $hexColor = [];
+                    for ($w = $startX; $w < $endX; $w++) {
+                        $hexColor[] = '[' . $h . 'x' . $w . '=' . $readImage->pickColor($w, $h)->toHex() . ']';
+                    }
+
+                    $hexPixelData[] = [
+                        'color' => implode(', ', $hexColor)
+                    ];
+                }
+
                 $tableColor = Table::addTo($virtualPage);
                 $tableColor->setSource($hexPixelData);
 
                 return $virtualPage;
             });
 
-            $accordion->addSection('RGB Color', function (VirtualPage $virtualPage) use ($rgbPixelData) {
+            $accordion->addSection('RGB Color', function (VirtualPage $virtualPage) use ($readImage) {
+                if (!is_null($this->getApp()->tryGetRequestQueryParam('x1')) && !is_null($this->getApp()->tryGetRequestQueryParam('y1')) && !is_null($this->getApp()->tryGetRequestQueryParam('x2')) && !is_null($this->getApp()->tryGetRequestQueryParam('y2'))) {
+                    $startX = $this->getApp()->getRequestQueryParam('x1');
+                    $endX = $this->getApp()->getRequestQueryParam('x2') + 1;
+                    $startY = $this->getApp()->getRequestQueryParam('y1');
+                    $endY = $this->getApp()->getRequestQueryParam('y2') + 1;
+                } else {
+                    $startX = 0;
+                    $endX = $readImage->width();
+                    $startY = 0;
+                    $endY = $readImage->height();
+                }
+                
+                $rgbPixelData = [];
+
+                for ($h = $startY; $h < $endY; $h++) {
+                    $rgbColor = [];
+                    for ($w = $startX; $w < $endX; $w++) {
+                        $rgbColor[] = '[' . $h . 'x' . $w . '=' . $readImage->pickColor($w, $h)->toString() . ']';
+                    }
+
+                    $rgbPixelData[] = [
+                        'color' => implode(', ', $rgbColor)
+                    ];
+                }
+
                 $tableColor = Table::addTo($virtualPage);
                 $tableColor->setSource($rgbPixelData);
 
